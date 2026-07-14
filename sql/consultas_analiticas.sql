@@ -13,7 +13,7 @@ FROM residente r
 JOIN profissional prof ON r.id_profissional = prof.id_pessoa
 JOIN pessoa p ON prof.id_pessoa = p.id_pessoa
 LEFT JOIN atendimento a ON r.id_profissional = a.id_residente
-GROUP BY p.nome
+GROUP BY r.id_profissional, p.nome
 ORDER BY total_atendimentos DESC, p.nome;
 
 
@@ -35,7 +35,7 @@ JOIN atendimento a ON prec.id_profissional = a.id_preceptor
 CROSS JOIN parametros param
 WHERE EXTRACT(MONTH FROM a.data_hora) = param.mes_filtro 
   AND EXTRACT(YEAR FROM a.data_hora) = param.ano_filtro
-GROUP BY p.nome
+GROUP BY prec.id_profissional, p.nome
 HAVING COUNT(a.id_atendimento) > 5;
 
 
@@ -57,7 +57,7 @@ FROM unidade u
 JOIN escala e ON u.id_unidade = e.id_unidade
 JOIN residente r ON e.id_residente = r.id_profissional
 JOIN pessoa p ON r.id_profissional = p.id_pessoa
-GROUP BY u.nome, p.nome
+GROUP BY u.id_unidade, u.nome, r.id_profissional, p.nome
 ORDER BY u.nome, p.nome;
 
 
@@ -66,10 +66,10 @@ ORDER BY u.nome, p.nome;
 -- ==============================================================================
 /* 
  * EXTENSÃO PONTUAL DO SCHEMA PARA A QUERY 4 
- * Obs: Explorando o repositório, notei que a tabela PROCEDIMENTO no arquivo 
- * create_tables.sql já possui a coluna nivel_risco. Porém, para cumprir 
- * estritamente o enunciado, estou incluindo o ALTER TABLE com IF NOT EXISTS 
- * e um UPDATE de exemplo para garantir que a query seja testável com os dados.
+ * Obs: O comando ALTER TABLE ... ADD COLUMN IF NOT EXISTS atua como uma 
+ * salvaguarda idempotente para adicionar a coluna 'nivel_risco'. Caso ela 
+ * já exista no banco, o comando é ignorado sem causar erros, garantindo 
+ * que a query e o posterior UPDATE sejam executados com segurança.
  */
 ALTER TABLE procedimento ADD COLUMN IF NOT EXISTS nivel_risco VARCHAR(10);
 
