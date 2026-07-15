@@ -12,14 +12,19 @@ as consultas básicas, tudo em **SQL puro (sem ORM)**.
 ## Tecnologias
 
 - **Banco:** PostgreSQL
+- **Aplicação Web:** Python (Streamlit e Psycopg2)
 - **Linguagem:** SQL puro (o ORM entra só na Etapa 2)
 
 ---
 
 ## Estrutura do repositório
 
-```
+```text
 gestao-hospital-yuska/
+├── app/
+│   ├── app.py                    # interface gráfica em Streamlit
+│   ├── db.py                     # conexão e execução de queries
+│   └── requirements.txt          # dependências do Python
 ├── sql/
 │   ├── create_tables.sql     # cria as tabelas (com as constraints: PK, FK, CHECK, NOT NULL, UNIQUE)
 │   ├── insert_dados.sql       # popula com dados de teste
@@ -38,6 +43,7 @@ gestao-hospital-yuska/
 ## Pré-requisitos
 
 - **PostgreSQL** instalado — ou **Docker**, se preferir subir o banco sem instalar nada.
+- **Python 3** instalado (para rodar a interface web).
 - Opcionalmente, um cliente como **pgAdmin** ou **DBeaver** pra visualizar os dados.
 
 ---
@@ -79,6 +85,22 @@ docker compose exec -T db psql -U postgres -d hospital_yuska < sql/consultas_ana
 docker compose down        # para o container, mas mantém os dados salvos
 docker compose down -v     # ou remove tudo, inclusive os dados, se quiser recomeçar do zero
 ```
+
+### Executando a Interface Web (Streamlit)
+
+O projeto possui uma interface visual para interagir com o banco de dados. **Certifique-se de que o banco (PostgreSQL local ou Docker) esteja rodando** e com as tabelas criadas antes de iniciar a aplicação.
+
+```bash
+# entre na pasta da aplicação
+cd app
+
+# instale as dependências
+pip install -r requirements.txt
+
+# inicie o servidor do Streamlit
+streamlit run app.py
+```
+A aplicação abrirá automaticamente no seu navegador.
 
 ---
 
