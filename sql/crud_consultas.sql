@@ -1,8 +1,8 @@
 -- Sistema de Gestao Hospitalar Dra. Yuska Maritan Brito
--- Etapa 1 - CRUD e consultas basicas (PostgreSQL, SQL puro)
+-- Etapa 1 - CRUD e consultas basicas
 
 
--- 3.1 inserir novo atendimento (so insere se paciente, residente e preceptor existem)
+-- inserir novo atendimento (so insere se paciente, residente e preceptor existem)
 INSERT INTO atendimento (id_atendimento, data_hora, duracao_minutos,
                          id_paciente, id_residente, id_preceptor)
 SELECT
@@ -18,7 +18,7 @@ WHERE EXISTS (SELECT 1 FROM paciente  WHERE id_pessoa       = 1)
 RETURNING id_atendimento;
 
 
--- 3.2 listar os atendimentos de um paciente, ordenados por data
+-- listar os atendimentos de um paciente, ordenados por data
 SELECT
     a.id_atendimento,
     a.data_hora,
@@ -34,7 +34,7 @@ WHERE a.id_paciente = 1
 ORDER BY a.data_hora;
 
 
--- 3.3 listar os procedimentos realizados em um atendimento
+-- listar os procedimentos realizados em um atendimento
 SELECT
     proc.nome AS procedimento,
     pr.quantidade,
@@ -46,7 +46,7 @@ WHERE pr.id_atendimento = 1
 ORDER BY proc.nome;
 
 
--- 3.4 atualizar dados do paciente (convenio em paciente, telefone em pessoa)
+-- atualizar dados do paciente (convenio em paciente, telefone em pessoa)
 UPDATE paciente
 SET num_convenio = 'UNIMED-9999'
 WHERE id_pessoa = 1;
@@ -57,14 +57,14 @@ WHERE id_pessoa = 1
   AND EXISTS (SELECT 1 FROM paciente WHERE id_pessoa = 1);
 
 
--- 3.5 remover procedimento realizado, so se ainda nao tiver faturamento
+-- remover procedimento realizado, so se ainda nao tiver faturamento
 DELETE FROM procedimento_realizado
 WHERE id_atendimento  = 1
   AND id_procedimento = 7
   AND tem_faturamento = FALSE;
 
 
--- 3.6 tempo medio de duracao dos atendimentos por residente
+-- tempo medio de duracao dos atendimentos por residente
 SELECT
     r.id_profissional AS id_residente,
     pe.nome           AS residente,
