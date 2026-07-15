@@ -29,6 +29,7 @@ gestao-hospital-yuska/
 │   ├── Modelagem_ProjetoBD.pdf        # DER, modelo relacional e normalização (Item 1)
 │   ├── diagramas/                     # DER editável (.drawio)
 │   └── demo_item3_saida.md            # saída real das operações do Item 3
+├── docker-compose.yml                 # sobe o PostgreSQL via Docker
 └── README.md
 ```
 
@@ -53,34 +54,31 @@ create_tables.sql  →  insert_dados.sql  →  crud_consultas.sql  →  consulta
 
 ```bash
 # cria o banco
-createdb hospital
+createdb hospital_yuska
 
 # roda os scripts na ordem
-psql -d hospital -f sql/create_tables.sql
-psql -d hospital -f sql/insert_dados.sql
-psql -d hospital -f sql/crud_consultas.sql
-psql -d hospital -f sql/consultas_analiticas.sql
+psql -d hospital_yuska -f sql/create_tables.sql
+psql -d hospital_yuska -f sql/insert_dados.sql
+psql -d hospital_yuska -f sql/crud_consultas.sql
+psql -d hospital_yuska -f sql/consultas_analiticas.sql
 ```
 
-### Opção B — Docker (banco descartável)
+### Opção B — Docker (usando o `docker-compose.yml` do projeto)
 
 ```bash
-# sobe um PostgreSQL
-docker run -d --name hospital_yuska -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=hospital postgres:16-alpine
+# sobe o PostgreSQL em segundo plano
+docker compose up -d
 
 # roda os scripts na ordem
-docker exec -i hospital_yuska psql -U postgres -d hospital < sql/create_tables.sql
-docker exec -i hospital_yuska psql -U postgres -d hospital < sql/insert_dados.sql
-docker exec -i hospital_yuska psql -U postgres -d hospital < sql/crud_consultas.sql
-docker exec -i hospital_yuska psql -U postgres -d hospital < sql/consultas_analiticas.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/create_tables.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/insert_dados.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/crud_consultas.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/consultas_analiticas.sql
 
-# quando terminar, remove o container
-docker rm -f hospital_yuska
+# quando terminar
+docker compose down        # para o container, mas mantém os dados salvos
+docker compose down -v     # ou remove tudo, inclusive os dados, se quiser recomeçar do zero
 ```
-
-Rodamos essa sequência num PostgreSQL e deu tudo certo — a saída de cada
-operação está guardada em [`docs/demo_item3_saida.md`](docs/demo_item3_saida.md),
-caso queira conferir sem precisar executar.
 
 ---
 
