@@ -1,219 +1,326 @@
-import os
-import psycopg2
-import psycopg2.extras
-import streamlit as st
+from contextlib import contextmanager
 
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "port": os.environ.get("DB_PORT", "5432"),
-    "dbname": os.environ.get("DB_NAME", "hospital_yuska"),
-    "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASSWORD", "1234"),
-}
+from sqlalchemy import func, extract, text
+from sqlalchemy.orm import joinedload, contains_eager
+import json
 
-
-@st.cache_resource
-def get_connection():
-    conn = psycopg2.connect(**DB_CONFIG)
-    conn.autocommit = True
-    return conn
+from models import (
+    SessionLocal,
+    Pessoa, Paciente, Profissional, Preceptor, Residente,
+    Unidade, Procedimento, Atendimento, ProcedimentoRealizado, Escala,
+    VwPacientesInternados, VwResidentesSemSupervisor, VwEstatisticasAtendimentosMensal
+)
 
 
-def query(sql, params=None):
-    conn = get_connection()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, params or ())
-        return cur.fetchall()
+@contextmanager
+def get_session():
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
-def execute(sql, params=None):
-    conn = get_connection()
-    with conn.cursor() as cur:
-        cur.execute(sql, params or ())
-        return cur.rowcount
-
-
-# ---- pacientes ----
+# pacientes
 
 def listar_pacientes(busca=""):
-    return query(
-        """
-        SELECT pe.id_pessoa, pe.nome, pe.cpf, pe.telefone,
-               pac.num_convenio, pac.grupo_sanguineo, pac.alergias
-        FROM paciente pac
-        JOIN pessoa pe ON pe.id_pessoa = pac.id_pessoa
-        WHERE pe.nome ILIKE %s
-        ORDER BY pe.nome
-        """,
-        (f"%{busca}%",),
-    )
+    with get_session() as s:
+        rows = (
+            s.query(Paciente)
+            .join(Paciente.pessoa)
+            .options(contains_eager(Paciente.pessoa))  # reaproveita o JOIN
+            .filter(Pessoa.nome.ilike(f"%{busca}%"))
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [
+            {
+                "id_pessoa": p.id_pessoa,
+                "nome": p.pessoa.nome,
+                "cpf": p.pessoa.cpf,
+                "telefone": p.pessoa.telefone,
+                "num_convenio": p.num_convenio,
+                "grupo_sanguineo": p.grupo_sanguineo,
+                "alergias": p.alergias,
+            }
+            for p in rows
+        ]
 
 
 def atualizar_paciente(id_pessoa, num_convenio, telefone):
-    execute("UPDATE paciente SET num_convenio = %s WHERE id_pessoa = %s", (num_convenio, id_pessoa))
-    return execute(
-        "UPDATE pessoa SET telefone = %s WHERE id_pessoa = %s AND EXISTS (SELECT 1 FROM paciente WHERE id_pessoa = %s)",
-        (telefone, id_pessoa, id_pessoa),
-    )
+    with get_session() as s:
+        pac = s.get(Paciente, id_pessoa)
+        if not pac:
+            return
+        pac.num_convenio = num_convenio
+        # navega o relationship para atualizar a tabela pessoa
+        pac.pessoa.telefone = telefone
+        s.commit()
 
 
-# ---- atendimentos (item 3) ----
+
+
+
+# atendimentos
 
 def listar_atendimentos_paciente(id_paciente):
-    return query(
-        """
-        SELECT a.id_atendimento, a.data_hora, a.duracao_minutos,
-               pe_res.nome AS residente, pe_pre.nome AS preceptor
-        FROM atendimento a
-        JOIN residente r      ON r.id_profissional = a.id_residente
-        JOIN pessoa    pe_res ON pe_res.id_pessoa  = r.id_profissional
-        JOIN preceptor p      ON p.id_profissional = a.id_preceptor
-        JOIN pessoa    pe_pre ON pe_pre.id_pessoa  = p.id_profissional
-        WHERE a.id_paciente = %s
-        ORDER BY a.data_hora DESC
-        """,
-        (id_paciente,),
-    )
+    with get_session() as s:
+        # eager loading: joinedload carrega toda a cadeia residente->profissional->pessoa
+        # em uma unica query, evitando N+1 selects
+        rows = (
+            s.query(Atendimento)
+            .options(
+                joinedload(Atendimento.residente)
+                    .joinedload(Residente.profissional)
+                    .joinedload(Profissional.pessoa),
+                joinedload(Atendimento.preceptor)
+                    .joinedload(Preceptor.profissional)
+                    .joinedload(Profissional.pessoa),
+            )
+            .filter(Atendimento.id_paciente == id_paciente)
+            .order_by(Atendimento.data_hora.desc())
+            .all()
+        )
+        return [
+            {
+                "id_atendimento": a.id_atendimento,
+                "data_hora": a.data_hora,
+                "duracao_minutos": a.duracao_minutos,
+                "residente": a.residente.profissional.pessoa.nome,
+                "preceptor": a.preceptor.profissional.pessoa.nome,
+            }
+            for a in rows
+        ]
 
 
 def listar_procedimentos_atendimento(id_atendimento):
-    return query(
-        """
-        SELECT pr.id_procedimento, proc.nome AS procedimento, pr.quantidade,
-               pr.tempo_real_minutos, pr.observacao, pr.tem_faturamento
-        FROM procedimento_realizado pr
-        JOIN procedimento proc ON proc.id_procedimento = pr.id_procedimento
-        WHERE pr.id_atendimento = %s
-        ORDER BY proc.nome
-        """,
-        (id_atendimento,),
-    )
+    with get_session() as s:
+        rows = (
+            s.query(
+                ProcedimentoRealizado.id_procedimento,
+                Procedimento.nome.label("procedimento"),
+                ProcedimentoRealizado.quantidade,
+                ProcedimentoRealizado.tempo_real_minutos,
+                ProcedimentoRealizado.observacao,
+                ProcedimentoRealizado.tem_faturamento,
+            )
+            .join(Procedimento)
+            .filter(ProcedimentoRealizado.id_atendimento == id_atendimento)
+            .order_by(Procedimento.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
 def listar_residentes():
-    return query(
-        """
-        SELECT r.id_profissional, pe.nome
-        FROM residente r JOIN pessoa pe ON pe.id_pessoa = r.id_profissional
-        ORDER BY pe.nome
-        """
-    )
+    with get_session() as s:
+        rows = (
+            s.query(
+                Residente.id_profissional,
+                Pessoa.nome,
+            )
+            .join(Pessoa, Residente.id_profissional == Pessoa.id_pessoa)
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
 def listar_preceptores():
-    return query(
-        """
-        SELECT p.id_profissional, pe.nome
-        FROM preceptor p JOIN pessoa pe ON pe.id_pessoa = p.id_profissional
-        ORDER BY pe.nome
-        """
-    )
+    with get_session() as s:
+        rows = (
+            s.query(
+                Preceptor.id_profissional,
+                Pessoa.nome,
+            )
+            .join(Pessoa, Preceptor.id_profissional == Pessoa.id_pessoa)
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
-def inserir_atendimento(data_hora, duracao_minutos, id_paciente, id_residente, id_preceptor):
-    rows = query(
-        """
-        INSERT INTO atendimento (id_atendimento, data_hora, duracao_minutos,
-                                 id_paciente, id_residente, id_preceptor)
-        SELECT (SELECT COALESCE(MAX(id_atendimento), 0) + 1 FROM atendimento),
-               %s, %s, %s, %s, %s
-        WHERE EXISTS (SELECT 1 FROM paciente  WHERE id_pessoa       = %s)
-          AND EXISTS (SELECT 1 FROM residente WHERE id_profissional = %s)
-          AND EXISTS (SELECT 1 FROM preceptor WHERE id_profissional = %s)
-        RETURNING id_atendimento
-        """,
-        (data_hora, duracao_minutos, id_paciente, id_residente, id_preceptor,
-         id_paciente, id_residente, id_preceptor),
-    )
-    return rows[0]["id_atendimento"] if rows else None
+def listar_unidades():
+    with get_session() as s:
+        rows = s.query(Unidade).order_by(Unidade.nome).all()
+        return [{"id_unidade": u.id_unidade, "nome": u.nome} for u in rows]
+
+
+def listar_procedimentos():
+    with get_session() as s:
+        rows = s.query(Procedimento).order_by(Procedimento.nome).all()
+        return [{"id_procedimento": p.id_procedimento, "nome": p.nome, "codigo": p.codigo, "risco": p.nivel_risco} for p in rows]
+
+
+def inserir_atendimento_completo(data_hora, duracao_minutos, id_paciente, id_residente, id_preceptor, id_unidade, procedimentos):
+    with get_session() as s:
+        try:
+            proc_json = json.dumps(procedimentos)
+            result = s.execute(
+                text("""
+                CALL sp_registrar_atendimento_completo(
+                    :dh, :dur, :pac, :res, :pre, :uni, :procs::jsonb, NULL
+                )
+                """),
+                {
+                    "dh": data_hora, "dur": duracao_minutos, "pac": id_paciente,
+                    "res": id_residente, "pre": id_preceptor, "uni": id_unidade,
+                    "procs": proc_json
+                }
+            )
+            row = result.fetchone()
+            s.commit()
+            return row[0] if row else None
+        except Exception as e:
+            s.rollback()
+            print("Erro ao registrar atendimento completo:", e)
+            return None
 
 
 def remover_procedimento_realizado(id_atendimento, id_procedimento):
-    return execute(
-        """
-        DELETE FROM procedimento_realizado
-        WHERE id_atendimento = %s AND id_procedimento = %s AND tem_faturamento = FALSE
-        """,
-        (id_atendimento, id_procedimento),
-    )
+    with get_session() as s:
+        pr = s.get(ProcedimentoRealizado, (id_atendimento, id_procedimento))
+        if pr and not pr.tem_faturamento:
+            s.delete(pr)
+            s.commit()
+            return 1
+        return 0
 
 
 def tempo_medio_por_residente():
-    return query(
-        """
-        SELECT r.id_profissional AS id_residente, pe.nome AS residente,
-               COUNT(a.id_atendimento) AS total_atendimentos,
-               ROUND(AVG(a.duracao_minutos), 1) AS media_duracao_min
-        FROM residente r
-        JOIN pessoa pe          ON pe.id_pessoa = r.id_profissional
-        LEFT JOIN atendimento a ON a.id_residente = r.id_profissional
-        GROUP BY r.id_profissional, pe.nome
-        ORDER BY media_duracao_min DESC NULLS LAST
-        """
-    )
+    with get_session() as s:
+        media = func.round(func.avg(Atendimento.duracao_minutos), 1)
+        rows = (
+            s.query(
+                Residente.id_profissional.label("id_residente"),
+                Pessoa.nome.label("residente"),
+                func.count(Atendimento.id_atendimento).label("total_atendimentos"),
+                media.label("media_duracao_min"),
+            )
+            .join(Pessoa, Residente.id_profissional == Pessoa.id_pessoa)
+            .outerjoin(Atendimento, Atendimento.id_residente == Residente.id_profissional)
+            .group_by(Residente.id_profissional, Pessoa.nome)
+            .order_by(media.desc().nulls_last())
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
-# ---- relatorios (item 4) ----
+# relatorios
 
 def ranking_residentes():
-    return query(
-        """
-        SELECT pe.nome AS nome_residente, COUNT(a.id_atendimento) AS total_atendimentos
-        FROM residente r
-        JOIN profissional prof ON r.id_profissional = prof.id_pessoa
-        JOIN pessoa pe ON prof.id_pessoa = pe.id_pessoa
-        LEFT JOIN atendimento a ON r.id_profissional = a.id_residente
-        GROUP BY r.id_profissional, pe.nome
-        ORDER BY total_atendimentos DESC, pe.nome
-        """
-    )
+    with get_session() as s:
+        total = func.count(Atendimento.id_atendimento).label("total_atendimentos")
+        rows = (
+            s.query(Pessoa.nome.label("nome_residente"), total)
+            .select_from(Residente)
+            .join(Pessoa, Residente.id_profissional == Pessoa.id_pessoa)
+            .outerjoin(Atendimento, Residente.id_profissional == Atendimento.id_residente)
+            .group_by(Residente.id_profissional, Pessoa.nome)
+            .order_by(total.desc(), Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
 def preceptores_mais_de_n_atendimentos(mes, ano, minimo=5):
-    return query(
-        """
-        SELECT pe.nome AS nome_preceptor, COUNT(a.id_atendimento) AS total_atendimentos
-        FROM preceptor prec
-        JOIN profissional prof ON prec.id_profissional = prof.id_pessoa
-        JOIN pessoa pe ON prof.id_pessoa = pe.id_pessoa
-        JOIN atendimento a ON prec.id_profissional = a.id_preceptor
-        WHERE EXTRACT(MONTH FROM a.data_hora) = %s
-          AND EXTRACT(YEAR FROM a.data_hora) = %s
-        GROUP BY prec.id_profissional, pe.nome
-        HAVING COUNT(a.id_atendimento) > %s
-        """,
-        (mes, ano, minimo),
-    )
+    with get_session() as s:
+        total = func.count(Atendimento.id_atendimento).label("total_atendimentos")
+        rows = (
+            s.query(Pessoa.nome.label("nome_preceptor"), total)
+            .select_from(Preceptor)
+            .join(Pessoa, Preceptor.id_profissional == Pessoa.id_pessoa)
+            .join(Atendimento, Preceptor.id_profissional == Atendimento.id_preceptor)
+            .filter(
+                extract("month", Atendimento.data_hora) == mes,
+                extract("year", Atendimento.data_hora) == ano,
+            )
+            .group_by(Preceptor.id_profissional, Pessoa.nome)
+            .having(total > minimo)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
 def plantoes_por_residente_unidade():
-    return query(
-        """
-        SELECT u.nome AS nome_unidade, pe.nome AS nome_residente,
-               COUNT(e.id_escala) AS quantidade_plantoes
-        FROM unidade u
-        JOIN escala e ON u.id_unidade = e.id_unidade
-        JOIN residente r ON e.id_residente = r.id_profissional
-        JOIN pessoa pe ON r.id_profissional = pe.id_pessoa
-        GROUP BY u.id_unidade, u.nome, r.id_profissional, pe.nome
-        ORDER BY u.nome, pe.nome
-        """
-    )
+    with get_session() as s:
+        rows = (
+            s.query(
+                Unidade.nome.label("nome_unidade"),
+                Pessoa.nome.label("nome_residente"),
+                func.count(Escala.id_escala).label("quantidade_plantoes"),
+            )
+            .select_from(Unidade)
+            .join(Escala, Unidade.id_unidade == Escala.id_unidade)
+            .join(Residente, Escala.id_residente == Residente.id_profissional)
+            .join(Pessoa, Residente.id_profissional == Pessoa.id_pessoa)
+            .group_by(Unidade.id_unidade, Unidade.nome, Residente.id_profissional, Pessoa.nome)
+            .order_by(Unidade.nome, Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
 
 
 def pacientes_sem_procedimento_alto():
-    return query(
-        """
-        SELECT pe.nome AS nome_paciente, pac.num_convenio
-        FROM paciente pac
-        JOIN pessoa pe ON pac.id_pessoa = pe.id_pessoa
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM atendimento a
-            JOIN procedimento_realizado pr ON a.id_atendimento = pr.id_atendimento
-            JOIN procedimento proc ON pr.id_procedimento = proc.id_procedimento
-            WHERE a.id_paciente = pac.id_pessoa AND proc.nivel_risco = 'ALTO'
+    with get_session() as s:
+        # subquery: pacientes que possuem procedimento de risco ALTO
+        pacientes_com_alto = (
+            s.query(Atendimento.id_paciente)
+            .join(ProcedimentoRealizado)
+            .join(Procedimento)
+            .filter(Procedimento.nivel_risco == "ALTO")
+            .distinct()
+            .subquery()
         )
-        ORDER BY pe.nome
-        """
-    )
+        rows = (
+            s.query(Pessoa.nome.label("nome_paciente"), Paciente.num_convenio)
+            .select_from(Paciente)
+            .join(Pessoa, Paciente.id_pessoa == Pessoa.id_pessoa)
+            .filter(Paciente.id_pessoa.notin_(
+                s.query(pacientes_com_alto.c.id_paciente)
+            ))
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
+
+# ==========================================
+# ETAPA 2: Views e Stored Procedures
+# ==========================================
+
+def listar_pacientes_internados():
+    with get_session() as s:
+        rows = s.query(VwPacientesInternados).order_by(VwPacientesInternados.nome_paciente).all()
+        return [{k: v for k, v in r.__dict__.items() if k != "_sa_instance_state"} for r in rows]
+
+def listar_residentes_sem_supervisor():
+    with get_session() as s:
+        rows = s.query(VwResidentesSemSupervisor).order_by(VwResidentesSemSupervisor.nome_residente).all()
+        return [{k: v for k, v in r.__dict__.items() if k != "_sa_instance_state"} for r in rows]
+
+def listar_estatisticas_mensais():
+    with get_session() as s:
+        rows = s.query(VwEstatisticasAtendimentosMensal).order_by(
+            VwEstatisticasAtendimentosMensal.ano_mes.desc(),
+            VwEstatisticasAtendimentosMensal.nome_unidade
+        ).all()
+        return [{k: v for k, v in r.__dict__.items() if k != "_sa_instance_state"} for r in rows]
+
+def calcular_tempo_medio_espera():
+    with get_session() as s:
+        result = s.execute(text("SELECT * FROM sp_calcular_tempo_medio_espera()"))
+        return [dict(row._mapping) for row in result]
+
+def reajustar_escala(id_residente, dia_orig, turno_orig, dia_dest, turno_dest):
+    with get_session() as s:
+        try:
+            result = s.execute(
+                text("CALL sp_reajustar_escala(:res, :do, :to, :dd, :td, NULL)"),
+                {"res": id_residente, "do": dia_orig, "to": turno_orig, "dd": dia_dest, "td": turno_dest}
+            )
+            row = result.fetchone()
+            s.commit()
+            return row[0] if row else 0
+        except Exception as e:
+            s.rollback()
+            raise e
