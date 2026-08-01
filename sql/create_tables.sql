@@ -1,5 +1,5 @@
 -- Sistema de Gestao Hospitalar Dra. Yuska Maritan Brito
--- Etapa 1 - criacao das tabelas (PostgreSQL)
+-- Etapa 1 - criacao das tabelas
 
 DROP TABLE IF EXISTS escala CASCADE;
 DROP TABLE IF EXISTS procedimento_realizado CASCADE;

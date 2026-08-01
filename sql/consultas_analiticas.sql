@@ -1,11 +1,9 @@
 -- Sistema de Gestao Hospitalar Dra. Yuska Maritan Brito
 -- Etapa 1 - Item 4: Consultas Analíticas
 
--- ==============================================================================
--- 1. Ranking dos residentes por número de atendimentos realizados
--- ==============================================================================
--- Utiliza LEFT JOIN a partir de residente (e suas tabelas base profissional/pessoa)
--- para garantir que residentes com 0 atendimentos apareçam na lista.
+
+--  Ranking de atendimentos por residente
+-- Inclui residentes sem histórico de atendimento via LEFT JOIN.
 SELECT 
     p.nome AS nome_residente, 
     COUNT(a.id_atendimento) AS total_atendimentos
@@ -17,11 +15,8 @@ GROUP BY r.id_profissional, p.nome
 ORDER BY total_atendimentos DESC, p.nome;
 
 
--- ==============================================================================
--- 2. Preceptores que supervisionaram mais de 5 atendimentos em um determinado mês
--- ==============================================================================
--- Utilizamos uma CTE (parametros) no topo para isolar e parametrizar o mês e o ano.
--- Filtramos usando HAVING COUNT(a.id_atendimento) > 5.
+-- Preceptores com volume de supervisão acima da cota mensal (5)
+-- Filtros de período isolados em CTE para facilitar a manutenção da query.
 WITH parametros AS (
     SELECT 5 AS mes_filtro, 2025 AS ano_filtro
 )
@@ -39,16 +34,8 @@ GROUP BY prec.id_profissional, p.nome
 HAVING COUNT(a.id_atendimento) > 5;
 
 
--- ==============================================================================
--- 3. Para cada unidade, quantidade de plantões escalados por residente no mês corrente
--- ==============================================================================
-/*
- * ABORDAGEM ESCOLHIDA: Opção (a)
- * Justificativa: A tabela ESCALA modela a grade padrão semanal da unidade.
- * Como não há datas específicas, interpretar "no mês corrente" como "a escala 
- * vigente estrutural" permite contar a carga horária/plantões fixos do residente,
- * mantendo a complexidade adequada para a Etapa 1 sem necessitar de novas tabelas.
- */
+-- Carga horária fixa (plantões/mês) por residente agrupada por unidade
+-- Baseado na grade semanal padrão vigente (tabela ESCALA).
 SELECT 
     u.nome AS nome_unidade,
     p.nome AS nome_residente,
@@ -60,20 +47,11 @@ JOIN pessoa p ON r.id_profissional = p.id_pessoa
 GROUP BY u.id_unidade, u.nome, r.id_profissional, p.nome
 ORDER BY u.nome, p.nome;
 
-
--- ==============================================================================
--- 4. Pacientes que nunca realizaram nenhum procedimento de nível de risco 'ALTO'
--- ==============================================================================
-/* 
- * EXTENSÃO PONTUAL DO SCHEMA PARA A QUERY 4 
- * Obs: O comando ALTER TABLE ... ADD COLUMN IF NOT EXISTS atua como uma 
- * salvaguarda idempotente para adicionar a coluna 'nivel_risco'. Caso ela 
- * já exista no banco, o comando é ignorado sem causar erros, garantindo 
- * que a query e o posterior UPDATE sejam executados com segurança.
- */
+-- Pacientes isentos de procedimentos de alto risco
+-- Extensão de schema: Adição idempotente da coluna nivel_risco.
 ALTER TABLE procedimento ADD COLUMN IF NOT EXISTS nivel_risco VARCHAR(10);
 
--- UPDATE de exemplo para classificar os procedimentos já existentes de forma coerente.
+-- Seed inicial de classificação de risco (TODO: migrar mapeamento para código TUSS/CBHPM)
 UPDATE procedimento
 SET nivel_risco = CASE 
     WHEN nome ILIKE '%Sutura%' THEN 'ALTO'
@@ -84,7 +62,7 @@ SET nivel_risco = CASE
     ELSE 'BAIXO'
 END;
 
--- Consulta em si (utilizando NOT EXISTS)
+-- Filtro de exclusão de pacientes via anti-join (NOT EXISTS)
 SELECT 
     p.nome AS nome_paciente,
     pac.num_convenio
