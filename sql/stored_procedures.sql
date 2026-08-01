@@ -183,10 +183,8 @@ EXCEPTION
 END;
 $$;
 
-
--- ============================================================================
 -- 2. sp_calcular_tempo_medio_espera
--- ============================================================================
+
 -- Tempo medio, por unidade, entre a chegada do paciente (atendimento.data_hora)
 -- e o inicio do primeiro procedimento daquele atendimento.
 --
@@ -236,10 +234,8 @@ BEGIN
 END;
 $$;
 
-
--- ============================================================================
 -- 3. sp_reajustar_escala
--- ============================================================================
+
 -- Move TODAS as escalas de um residente de um par (dia, turno) para outro par
 -- (dia, turno), preservando a unidade de cada escala.
 --

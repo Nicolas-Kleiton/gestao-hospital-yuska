@@ -9,10 +9,8 @@
 --   psql -f triggers.sql
 
 
--- ============================================================================
 -- EXTENSOES DE SCHEMA
 -- Necessarias para as triggers 2 e 3. IF NOT EXISTS garante idempotencia.
--- ============================================================================
 
 -- Tabela de auditoria criada aqui pois nao existia no schema original.
 CREATE TABLE IF NOT EXISTS auditoria_atendimento (
@@ -30,9 +28,8 @@ ALTER TABLE procedimento
     ADD COLUMN IF NOT EXISTS media_tempo_procedimento NUMERIC;
 
 
--- ============================================================================
 -- trg_check_sobreposicao_escala
--- ============================================================================
+
 -- BEFORE INSERT OR UPDATE em ESCALA.
 -- Impede que um residente seja escalado no mesmo dia_semana/turno em duas
 -- unidades distintas -- caso que a UNIQUE (id_unidade, dia_semana, turno,
@@ -41,7 +38,6 @@ ALTER TABLE procedimento
 --
 -- No UPDATE, a clausula id_escala <> NEW.id_escala exclui o proprio registro
 -- da busca; sem ela, qualquer UPDATE dispararia falso positivo contra si mesmo.
--- ============================================================================
 
 CREATE OR REPLACE FUNCTION fn_check_sobreposicao_escala()
 RETURNS TRIGGER
@@ -80,9 +76,8 @@ CREATE TRIGGER trg_check_sobreposicao_escala
     EXECUTE FUNCTION fn_check_sobreposicao_escala();
 
 
--- ============================================================================
 -- trg_audita_atendimento
--- ============================================================================
+
 -- AFTER INSERT OR UPDATE OR DELETE em ATENDIMENTO.
 -- Grava um registro em AUDITORIA_ATENDIMENTO a cada operacao DML, com
 -- snapshot JSONB do estado anterior (dados_antigos) e posterior (dados_novos).
@@ -92,7 +87,6 @@ CREATE TRIGGER trg_check_sobreposicao_escala
 -- implantacao real, substituir por:
 --   current_setting('app.usuario', true)
 -- populado via SET LOCAL app.usuario = '...' antes de cada operacao.
--- ============================================================================
 
 CREATE OR REPLACE FUNCTION fn_audita_atendimento()
 RETURNS TRIGGER
@@ -137,22 +131,20 @@ CREATE TRIGGER trg_audita_atendimento
     EXECUTE FUNCTION fn_audita_atendimento();
 
 
--- ============================================================================
 -- trg_atualiza_media_procedimentos
--- ============================================================================
+
 -- AFTER INSERT em PROCEDIMENTO_REALIZADO.
 -- Recalcula AVG(tempo_real_minutos) de todos os registros do procedimento
 -- recem-inserido e atualiza procedimento.media_tempo_procedimento.
---
+
 -- AVG em vez de calculo incremental: evita deriva de arredondamento acumulada
 -- ao longo de muitos registros.
---
+
 -- Escopo limitado a INSERT conforme enunciado. Para cobrir UPDATE/DELETE
 -- futuramente: adicionar OR UPDATE OR DELETE ao CREATE TRIGGER e usar
 -- COALESCE(NEW.id_procedimento, OLD.id_procedimento) como chave.
---
+
 -- NULLs em tempo_real_minutos sao ignorados automaticamente pelo AVG.
--- ============================================================================
 
 CREATE OR REPLACE FUNCTION fn_atualiza_media_procedimentos()
 RETURNS TRIGGER
@@ -182,17 +174,11 @@ CREATE TRIGGER trg_atualiza_media_procedimentos
     FOR EACH ROW
     EXECUTE FUNCTION fn_atualiza_media_procedimentos();
 
-
--- ============================================================================
 -- TESTES MINIMOS
--- ============================================================================
 
-
--- ----------------------------------------------------------------------------
 -- trg_check_sobreposicao_escala
 -- Residente 14 ja esta em Quarta/Manha na unidade 2 (id_escala = 4).
--- Inserir na unidade 1 no mesmo horario deve ser bloqueado.
--- ----------------------------------------------------------------------------
+-- Inserir na unidade 1 no mesmo horario deve ser bloqueado.---
 
 -- 1a: deve lancar excecao
 DO $$
@@ -226,10 +212,8 @@ END;
 $$;
 
 
--- ----------------------------------------------------------------------------
 -- trg_audita_atendimento
 -- INSERT + UPDATE + DELETE em ATENDIMENTO; esperado: 3 linhas em auditoria.
--- ----------------------------------------------------------------------------
 
 DO $$
 DECLARE
@@ -268,11 +252,9 @@ DELETE FROM auditoria_atendimento
  );
 
 
--- ----------------------------------------------------------------------------
 -- trg_atualiza_media_procedimentos
 -- id_procedimento = 2 (Coleta de sangue) tem tempo_real_minutos 12, 11, 10
 -- nos dados iniciais. Inserir tempo = 9 deve resultar em AVG = 10.5.
--- ----------------------------------------------------------------------------
 
 BEGIN;
 
@@ -296,8 +278,3 @@ SELECT id_procedimento, nome, media_tempo_procedimento AS media_depois
   FROM procedimento WHERE id_procedimento = 2;
 
 ROLLBACK;
-
-
--- ============================================================================
--- FIM DO ARQUIVO triggers.sql
--- ============================================================================

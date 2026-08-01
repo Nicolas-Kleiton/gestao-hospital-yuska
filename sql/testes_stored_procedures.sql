@@ -7,10 +7,7 @@
 --   psql -f stored_procedures.sql
 --   psql -f testes_stored_procedures.sql
 
-
--- ============================================================================
 -- 1. sp_registrar_atendimento_completo
--- ============================================================================
 
 -- ---- 1.1 CAMINHO FELIZ: atendimento + 3 procedimentos, tudo gravado ----
 BEGIN;
@@ -141,9 +138,7 @@ END
 $$;
 
 
--- ============================================================================
--- 2. sp_calcular_tempo_medio_espera
--- ============================================================================
+-- 2. sp_calcular_tempo_medio_espera==
 
 SELECT * FROM sp_calcular_tempo_medio_espera();
 
@@ -161,10 +156,7 @@ WHERE pr.data_hora_inicio IS NOT NULL
 GROUP BY u.nome, a.id_atendimento, a.data_hora
 ORDER BY u.nome, a.id_atendimento;
 
-
--- ============================================================================
 -- 3. sp_reajustar_escala
--- ============================================================================
 
 -- estado inicial das escalas
 SELECT e.id_escala, u.nome AS unidade, e.dia_semana, e.turno, e.id_residente
