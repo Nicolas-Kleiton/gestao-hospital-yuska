@@ -166,10 +166,14 @@ class Escala(Base):
     id_unidade = Column(Integer, ForeignKey("unidade.id_unidade"), nullable=False)
     id_residente = Column(Integer, ForeignKey("residente.id_profissional"), nullable=False)
     id_preceptor = Column(Integer, ForeignKey("preceptor.id_profissional"), nullable=False)
+    # coluna de controle de versao para o lock otimista (Etapa 2 - Item 6)
+    version_id = Column(Integer, nullable=False, default=1)
 
     unidade = relationship("Unidade", back_populates="escalas")
     residente = relationship("Residente", back_populates="escalas")
     preceptor = relationship("Preceptor", back_populates="escalas")
+
+    __mapper_args__ = {"version_id_col": version_id}
 
 
 # ==========================================

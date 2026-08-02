@@ -288,16 +288,18 @@ elif pagina == "Relatorios":
     st.markdown("Métricas de performance, ranking de profissionais e auditoria clínica.")
     st.write("")
 
-    aba_residentes, aba_preceptores, aba_plantoes, aba_pacientes, aba_internados, aba_aviso_sup, aba_estatisticas, aba_espera, aba_reajuste = st.tabs([
-        "👨‍⚕️ Residentes", 
-        "👨‍🏫 Preceptores", 
-        "🏥 Escalas", 
+    aba_residentes, aba_preceptores, aba_plantoes, aba_pacientes, aba_internados, aba_aviso_sup, aba_estatisticas, aba_espera, aba_reajuste, aba_avancadas, aba_concorrencia = st.tabs([
+        "👨‍⚕️ Residentes",
+        "👨‍🏫 Preceptores",
+        "🏥 Escalas",
         "⚠️ Risco",
         "🛏️ Internados",
         "⚠️ Sem Sup. Doutor",
         "📈 Estatísticas Mensais",
         "⏱️ Tempo de Espera",
-        "🔄 Reajustar Escala"
+        "🔄 Reajustar Escala",
+        "🔬 Consultas Avançadas",
+        "🔒 Concorrência",
     ])
 
     with aba_residentes:
@@ -424,3 +426,65 @@ elif pagina == "Relatorios":
                     # Extracts the friendly part from psycopg2 error if possible
                     err_msg = str(e).split("CONTEXT")[0].strip() if "CONTEXT" in str(e) else str(e)
                     st.error(f"Erro ao reajustar: {err_msg}")
+
+    with aba_avancadas:
+        st.subheader("🔬 Consultas Avançadas (ORM)")
+
+        st.markdown("**Preceptores que supervisionaram residentes que atenderam pacientes flamenguistas**")
+        resultado = db.preceptores_de_pacientes_flamenguistas()
+        if resultado:
+            st.dataframe(pd.DataFrame(resultado).rename(columns={"nome_preceptor": "Preceptor"}),
+                         hide_index=True, use_container_width=True)
+        else:
+            st.info("Nenhum preceptor supervisionou atendimento de paciente flamenguista.")
+
+        st.divider()
+        st.markdown("**Último atendimento de cada paciente**")
+        resultado = db.ultimo_atendimento_por_paciente()
+        if resultado:
+            df = pd.DataFrame(resultado)
+            df["data_hora"] = df["data_hora"].apply(formata_data)
+            df = df.rename(columns={
+                "paciente": "Paciente", "data_hora": "Data/Hora",
+                "residente": "Residente", "preceptor": "Preceptor", "procedimentos": "Procedimentos",
+            })
+            st.dataframe(df, hide_index=True, use_container_width=True)
+        else:
+            st.info("Nenhum atendimento registrado.")
+
+        st.divider()
+        st.markdown("**Percentual de procedimentos de alto risco por residente**")
+        resultado = db.percentual_alto_risco_por_residente()
+        if resultado:
+            df = pd.DataFrame(resultado).rename(columns={
+                "residente": "Residente", "total_procedimentos": "Total de Procedimentos",
+                "percentual_alto_risco": "% Alto Risco",
+            })
+            st.dataframe(df, hide_index=True, use_container_width=True)
+        else:
+            st.info("Nenhum procedimento registrado.")
+
+    with aba_concorrencia:
+        st.subheader("🔒 Simulação de Concorrência (Lock Otimista)")
+        st.caption(
+            "Duas transações tentam alterar a mesma escala ao mesmo tempo. "
+            "A primeira a salvar vence; a segunda é rejeitada por versão desatualizada."
+        )
+        escalas = db.plantoes_por_residente_unidade()
+        with st.form("form_concorrencia"):
+            id_escala = st.number_input("ID da escala (banco de testes: 1 a 6)", min_value=1, value=1, step=1)
+            c1, c2 = st.columns(2)
+            turno_a = c1.selectbox("Transação A tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=1)
+            turno_b = c2.selectbox("Transação B tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=2)
+            simular = st.form_submit_button("▶️ Simular conflito")
+
+        if simular:
+            try:
+                logs = db.simular_concorrencia_escala(int(id_escala), turno_a, turno_b)
+                for linha in logs:
+                    if "REJEITADA" in linha:
+                        st.error(linha)
+                    else:
+                        st.success(linha)
+            except Exception as e:
+                st.error(f"Erro ao simular: {e}")

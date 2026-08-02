@@ -1,7 +1,8 @@
 from contextlib import contextmanager
 
-from sqlalchemy import func, extract, text
-from sqlalchemy.orm import joinedload, contains_eager
+from sqlalchemy import func, extract, text, case
+from sqlalchemy.orm import joinedload, contains_eager, aliased
+from sqlalchemy.orm.exc import StaleDataError
 import json
 
 from models import (
@@ -324,3 +325,129 @@ def reajustar_escala(id_residente, dia_orig, turno_orig, dia_dest, turno_dest):
         except Exception as e:
             s.rollback()
             raise e
+
+
+# ==========================================
+# ETAPA 2 - Item 5: Consultas avancadas com ORM
+# ==========================================
+
+def preceptores_de_pacientes_flamenguistas():
+    with get_session() as s:
+        pessoa_paciente = aliased(Pessoa)
+        rows = (
+            s.query(Pessoa.nome.label("nome_preceptor"))
+            .select_from(Preceptor)
+            .join(Pessoa, Preceptor.id_profissional == Pessoa.id_pessoa)
+            .join(Atendimento, Atendimento.id_preceptor == Preceptor.id_profissional)
+            .join(Paciente, Atendimento.id_paciente == Paciente.id_pessoa)
+            .join(pessoa_paciente, Paciente.id_pessoa == pessoa_paciente.id_pessoa)
+            .filter(pessoa_paciente.is_flamengo.is_(True))
+            .distinct()
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [r._asdict() for r in rows]
+
+
+def ultimo_atendimento_por_paciente():
+    with get_session() as s:
+        ultimo = (
+            s.query(
+                Atendimento.id_paciente,
+                func.max(Atendimento.data_hora).label("ultima_data"),
+            )
+            .group_by(Atendimento.id_paciente)
+            .subquery()
+        )
+        rows = (
+            s.query(Atendimento)
+            .join(
+                ultimo,
+                (Atendimento.id_paciente == ultimo.c.id_paciente)
+                & (Atendimento.data_hora == ultimo.c.ultima_data),
+            )
+            .options(
+                joinedload(Atendimento.paciente).joinedload(Paciente.pessoa),
+                joinedload(Atendimento.residente).joinedload(Residente.profissional).joinedload(Profissional.pessoa),
+                joinedload(Atendimento.preceptor).joinedload(Preceptor.profissional).joinedload(Profissional.pessoa),
+                joinedload(Atendimento.procedimentos_realizados).joinedload(ProcedimentoRealizado.procedimento),
+            )
+            .all()
+        )
+        resultado = [
+            {
+                "paciente": a.paciente.pessoa.nome,
+                "data_hora": a.data_hora,
+                "residente": a.residente.profissional.pessoa.nome,
+                "preceptor": a.preceptor.profissional.pessoa.nome,
+                "procedimentos": ", ".join(pr.procedimento.nome for pr in a.procedimentos_realizados) or "-",
+            }
+            for a in rows
+        ]
+        resultado.sort(key=lambda r: r["paciente"])
+        return resultado
+
+
+def percentual_alto_risco_por_residente():
+    with get_session() as s:
+        total = func.count(ProcedimentoRealizado.id_procedimento).label("total")
+        total_alto = func.sum(case((Procedimento.nivel_risco == "ALTO", 1), else_=0)).label("total_alto")
+        rows = (
+            s.query(Pessoa.nome.label("residente"), total, total_alto)
+            .select_from(Residente)
+            .join(Pessoa, Residente.id_profissional == Pessoa.id_pessoa)
+            .join(Atendimento, Atendimento.id_residente == Residente.id_profissional)
+            .join(ProcedimentoRealizado, ProcedimentoRealizado.id_atendimento == Atendimento.id_atendimento)
+            .join(Procedimento, Procedimento.id_procedimento == ProcedimentoRealizado.id_procedimento)
+            .group_by(Residente.id_profissional, Pessoa.nome)
+            .order_by(Pessoa.nome)
+            .all()
+        )
+        return [
+            {
+                "residente": r.residente,
+                "total_procedimentos": r.total,
+                "percentual_alto_risco": round((r.total_alto / r.total) * 100, 1) if r.total else 0.0,
+            }
+            for r in rows
+        ]
+
+
+# ==========================================
+# ETAPA 2 - Item 6: Concorrencia e transacoes (lock otimista)
+# ==========================================
+
+def simular_concorrencia_escala(id_escala, turno_a, turno_b):
+    """Abre duas sessoes independentes sobre a MESMA linha de escala, simulando
+    duas pessoas editando a escala ao mesmo tempo. A primeira a comitar vence;
+    a segunda, que leu a versao antiga, e rejeitada pelo lock otimista."""
+    logs = []
+    sessao_a = SessionLocal()
+    sessao_b = SessionLocal()
+    try:
+        escala_a = sessao_a.get(Escala, id_escala)
+        escala_b = sessao_b.get(Escala, id_escala)
+        logs.append(f"Transacao A e B leram a escala #{id_escala} (versao {escala_a.version_id}).")
+        print(logs[-1])
+
+        escala_a.turno = turno_a
+        sessao_a.commit()
+        logs.append(f"Transacao A mudou o turno para '{turno_a}' e comitou (nova versao {escala_a.version_id}).")
+        print(logs[-1])
+
+        escala_b.turno = turno_b
+        try:
+            sessao_b.commit()
+            logs.append(f"Transacao B mudou o turno para '{turno_b}' e comitou (nenhum conflito detectado).")
+            print(logs[-1])
+        except StaleDataError:
+            sessao_b.rollback()
+            logs.append(
+                "Transacao B tentou comitar com a versao antiga e foi REJEITADA "
+                "(StaleDataError - conflito detectado pelo lock otimista)."
+            )
+            print(logs[-1])
+    finally:
+        sessao_a.close()
+        sessao_b.close()
+    return logs
