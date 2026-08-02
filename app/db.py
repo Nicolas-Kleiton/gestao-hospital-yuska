@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from sqlalchemy import func, extract, text, case
 from sqlalchemy.orm import joinedload, contains_eager, aliased
 from sqlalchemy.orm.exc import StaleDataError
+from sqlalchemy.orm.attributes import flag_modified
 import json
 
 from models import (
@@ -431,11 +432,16 @@ def simular_concorrencia_escala(id_escala, turno_a, turno_b):
         print(logs[-1])
 
         escala_a.turno = turno_a
+        # forca o UPDATE mesmo se turno_a repetir o valor atual, senao o
+        # SQLAlchemy nao detecta mudanca, pula o UPDATE e a versao nao avanca
+        # (o que anularia o conflito que estamos tentando demonstrar)
+        flag_modified(escala_a, "turno")
         sessao_a.commit()
         logs.append(f"Transacao A mudou o turno para '{turno_a}' e comitou (nova versao {escala_a.version_id}).")
         print(logs[-1])
 
         escala_b.turno = turno_b
+        flag_modified(escala_b, "turno")
         try:
             sessao_b.commit()
             logs.append(f"Transacao B mudou o turno para '{turno_b}' e comitou (nenhum conflito detectado).")
