@@ -72,33 +72,37 @@ INSERT INTO procedimento (id_procedimento, codigo, nome, tempo_medio_minutos, ni
     (8, 'PROC-008', 'Reanimacao cardiopulmonar', 25, 'ALTO');
 
 -- todos os atendimentos em maio/2025. a Gabriela (6) supervisiona 6 deles
-INSERT INTO atendimento (id_atendimento, data_hora, duracao_minutos, id_paciente, id_residente, id_preceptor) VALUES
-    (1, '2025-05-02 08:30:00', 45, 1, 11, 6),
-    (2, '2025-05-03 09:15:00', 30, 2, 12, 6),
-    (3, '2025-05-05 10:00:00', 60, 3, 11, 6),
-    (4, '2025-05-08 14:20:00', 25, 1, 13, 6),
-    (5, '2025-05-12 16:45:00', 50, 4, 14, 6),
-    (6, '2025-05-15 11:10:00', 20, 5, 15, 6),
-    (7, '2025-05-18 08:00:00', 35, 2, 12, 7),
-    (8, '2025-05-20 13:30:00', 40, 3, 13, 8),
-    (9, '2025-05-22 15:00:00', 55, 4, 14, 9),
-    (10, '2025-05-25 09:40:00', 30, 1, 11, 10);
+-- [Etapa 2] coluna id_unidade, distribuida de forma coerente com a escala
+INSERT INTO atendimento (id_atendimento, data_hora, duracao_minutos, id_paciente, id_residente, id_preceptor, id_unidade) VALUES
+    (1,  '2025-05-02 08:30:00', 45, 1, 11,  6, 1),
+    (2,  '2025-05-03 09:15:00', 30, 2, 12,  6, 1),
+    (3,  '2025-05-05 10:00:00', 60, 3, 11,  6, 3),
+    (4,  '2025-05-08 14:20:00', 25, 1, 13,  6, 2),
+    (5,  '2025-05-12 16:45:00', 50, 4, 14,  6, 2),
+    (6,  '2025-05-15 11:10:00', 20, 5, 15,  6, 4),
+    (7,  '2025-05-18 08:00:00', 35, 2, 12,  7, 3),
+    (8,  '2025-05-20 13:30:00', 40, 3, 13,  8, 1),
+    (9,  '2025-05-22 15:00:00', 55, 4, 14,  9, 2),
+    (10, '2025-05-25 09:40:00', 30, 1, 11, 10, 4);
 
-INSERT INTO procedimento_realizado (id_atendimento, id_procedimento, quantidade, tempo_real_minutos, observacao, tem_faturamento) VALUES
-    (1, 2, 1, 12, 'Sem intercorrencias', TRUE),
-    (1, 7, 2, 18, 'Troca de curativo dupla', FALSE),
-    (2, 1, 1, 22, 'Sutura em regiao frontal', TRUE),
-    (2, 4, 1, 33, 'Intubacao com leve dessaturacao', TRUE),
-    (3, 3, 3, 6, 'Medicacao endovenosa', FALSE),
-    (4, 6, 1, 38, 'Puncao lombar diagnostica', TRUE),
-    (4, 2, 1, 11, 'Coleta para hemograma', FALSE),
-    (5, 8, 1, 27, 'RCP por 4 ciclos', TRUE),
-    (6, 7, 1, 14, 'Curativo simples', FALSE),
-    (7, 1, 2, 25, 'Duas suturas', TRUE),
-    (7, 5, 1, 42, 'Drenagem com anestesia local', TRUE),
-    (8, 2, 1, 10, 'Coleta de rotina', FALSE),
-    (9, 4, 1, 31, 'Intubacao eletiva', TRUE),
-    (10, 3, 1, 5, 'Analgesico aplicado', FALSE);
+-- [Etapa 2] coluna data_hora_inicio: o primeiro procedimento de cada
+-- atendimento comeca de 5 a 30 min apos a chegada e, dentro do mesmo
+-- atendimento, ha 20 min entre um procedimento e o seguinte
+INSERT INTO procedimento_realizado (id_atendimento, id_procedimento, quantidade, tempo_real_minutos, data_hora_inicio, observacao, tem_faturamento) VALUES
+    (1,  2, 1, 12, '2025-05-02 08:40:00', 'Sem intercorrencias', TRUE),
+    (1,  7, 2, 18, '2025-05-02 09:00:00', 'Troca de curativo dupla', FALSE),
+    (2,  1, 1, 22, '2025-05-03 09:30:00', 'Sutura em regiao frontal', TRUE),
+    (2,  4, 1, 33, '2025-05-03 09:50:00', 'Intubacao com leve dessaturacao', TRUE),
+    (3,  3, 3,  6, '2025-05-05 10:20:00', 'Medicacao endovenosa', FALSE),
+    (4,  6, 1, 38, '2025-05-08 15:05:00', 'Puncao lombar diagnostica', TRUE),
+    (4,  2, 1, 11, '2025-05-08 14:45:00', 'Coleta para hemograma', FALSE),
+    (5,  8, 1, 27, '2025-05-12 17:15:00', 'RCP por 4 ciclos', TRUE),
+    (6,  7, 1, 14, '2025-05-15 11:15:00', 'Curativo simples', FALSE),
+    (7,  1, 2, 25, '2025-05-18 08:10:00', 'Duas suturas', TRUE),
+    (7,  5, 1, 42, '2025-05-18 08:30:00', 'Drenagem com anestesia local', TRUE),
+    (8,  2, 1, 10, '2025-05-20 13:45:00', 'Coleta de rotina', FALSE),
+    (9,  4, 1, 31, '2025-05-22 15:20:00', 'Intubacao eletiva', TRUE),
+    (10, 3, 1,  5, '2025-05-25 10:05:00', 'Analgesico aplicado', FALSE);
 
 INSERT INTO escala (id_escala, dia_semana, turno, id_unidade, id_residente, id_preceptor) VALUES
     (1, 'Segunda', 'Manha', 1, 11, 6),
@@ -107,5 +111,11 @@ INSERT INTO escala (id_escala, dia_semana, turno, id_unidade, id_residente, id_p
     (4, 'Quarta', 'Manha', 2, 14, 8),
     (5, 'Quinta', 'Tarde', 3, 15, 9),
     (6, 'Segunda', 'Manha', 1, 12, 6);
+
+-- [Etapa 2] os atendimentos acima foram inseridos com id explicito, o que nao
+-- avanca a sequencia da IDENTITY. Sem este setval a sp_registrar_atendimento_completo
+-- geraria id 1 e colidiria com as linhas ja existentes.
+SELECT setval(pg_get_serial_sequence('atendimento', 'id_atendimento'),
+              (SELECT MAX(id_atendimento) FROM atendimento));
 
 COMMIT;

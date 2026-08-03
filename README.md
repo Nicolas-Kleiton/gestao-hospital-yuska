@@ -4,16 +4,19 @@ Sistema para gerenciar os atendimentos de um hospital universitário: pacientes,
 profissionais, procedimentos e as escalas de plantão, onde os residentes atendem
 sob supervisão dos preceptores.
 
-Este repositório contém a **Etapa 1** do projeto — o modelo relacional, o CRUD e
-as consultas básicas, tudo em **SQL puro (sem ORM)**.
+Este repositório contém a **Etapa 1 e Etapa 2** do projeto, englobando desde a 
+modelagem relacional, CRUD e consultas básicas (SQL puro), até funcionalidades
+avançadas usando Stored Procedures, Triggers, Views, controle de concorrência e 
+uma aplicação Web com ORM.
 
 ---
 
 ## Tecnologias
 
-- **Banco:** PostgreSQL
-- **Aplicação Web:** Python (Streamlit e Psycopg2)
-- **Linguagem:** SQL puro (o ORM entra só na Etapa 2)
+- **Banco de Dados:** PostgreSQL
+- **Aplicação Web:** Python (Streamlit)
+- **ORM:** SQLAlchemy
+- **Linguagem:** SQL e Python
 
 ---
 
@@ -22,19 +25,24 @@ as consultas básicas, tudo em **SQL puro (sem ORM)**.
 ```text
 gestao-hospital-yuska/
 ├── app/
-│   ├── app.py                    # interface gráfica em Streamlit
-│   ├── db.py                     # conexão e execução de queries
+│   ├── app.py                    # interface gráfica em Streamlit com as consultas ORM
+│   ├── db.py                     # conexão e execução de queries usando SQLAlchemy
+│   ├── models.py                 # mapeamento objeto-relacional (Entidades)
 │   └── requirements.txt          # dependências do Python
 ├── sql/
-│   ├── create_tables.sql     # cria as tabelas (com as constraints: PK, FK, CHECK, NOT NULL, UNIQUE)
-│   ├── insert_dados.sql       # popula com dados de teste
-│   ├── crud_consultas.sql     # CRUD e consultas básicas (Item 3)
-│   └── consultas_analiticas.sql  # consultas analíticas (Item 4)
+│   ├── create_tables.sql         # cria as tabelas (Etapa 1 + adaptações Etapa 2)
+│   ├── insert_dados.sql          # popula com dados de teste
+│   ├── crud_consultas.sql        # CRUD e consultas básicas (Etapa 1)
+│   ├── consultas_analiticas.sql  # consultas analíticas (Etapa 1)
+│   ├── stored_procedures.sql     # Stored Procedures (Etapa 2)
+│   ├── triggers.sql              # Triggers e tabelas de auditoria (Etapa 2)
+│   ├── views.sql                 # Views de relatórios (Etapa 2)
+│   ├── concorrencia.sql          # Setup para simulação de concorrência/lock (Etapa 2)
+│   └── testes_stored_procedures.sql
 ├── docs/
-│   ├── Modelagem_ProjetoBD.pdf        # DER, modelo relacional e normalização (Item 1)
-│   ├── diagramas/                     # DER editável (.drawio)
-│   └── demo_item3_saida.md            # saída real das operações do Item 3
-├── docker-compose.yml                 # sobe o PostgreSQL via Docker
+│   ├── Modelagem_ProjetoBD.pdf   # DER, modelo relacional e normalização
+│   └── diagramas/                # DER editável (.drawio)
+├── docker-compose.yml            # sobe o PostgreSQL via Docker
 └── README.md
 ```
 
@@ -42,18 +50,18 @@ gestao-hospital-yuska/
 
 ## Pré-requisitos
 
-- **PostgreSQL** instalado — ou **Docker**, se preferir subir o banco sem instalar nada.
+- **PostgreSQL** instalado — ou **Docker**, se preferir subir o banco via container.
 - **Python 3** instalado (para rodar a interface web).
-- Opcionalmente, um cliente como **pgAdmin** ou **DBeaver** pra visualizar os dados.
 
 ---
 
-## Como executar
+## Como executar o Banco de Dados
 
-Rode os scripts **nesta ordem** — cada um depende do anterior:
+Os scripts devem ser executados **nesta ordem** para garantir as dependências estruturais e lógicas:
 
 ```
-create_tables.sql  →  insert_dados.sql  →  crud_consultas.sql  →  consultas_analiticas.sql
+create_tables.sql  →  insert_dados.sql  →  [crud_consultas, consultas_analiticas] 
+→ stored_procedures.sql → triggers.sql → views.sql → concorrencia.sql
 ```
 
 ### Opção A — PostgreSQL local
@@ -67,9 +75,13 @@ psql -d hospital_yuska -f sql/create_tables.sql
 psql -d hospital_yuska -f sql/insert_dados.sql
 psql -d hospital_yuska -f sql/crud_consultas.sql
 psql -d hospital_yuska -f sql/consultas_analiticas.sql
+psql -d hospital_yuska -f sql/stored_procedures.sql
+psql -d hospital_yuska -f sql/triggers.sql
+psql -d hospital_yuska -f sql/views.sql
+psql -d hospital_yuska -f sql/concorrencia.sql
 ```
 
-### Opção B — Docker (usando o `docker-compose.yml` do projeto)
+### Opção B — Docker (usando o `docker-compose.yml`)
 
 ```bash
 # sobe o PostgreSQL em segundo plano
@@ -80,15 +92,22 @@ docker compose exec -T db psql -U postgres -d hospital_yuska < sql/create_tables
 docker compose exec -T db psql -U postgres -d hospital_yuska < sql/insert_dados.sql
 docker compose exec -T db psql -U postgres -d hospital_yuska < sql/crud_consultas.sql
 docker compose exec -T db psql -U postgres -d hospital_yuska < sql/consultas_analiticas.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/stored_procedures.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/triggers.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/views.sql
+docker compose exec -T db psql -U postgres -d hospital_yuska < sql/concorrencia.sql
 
 # quando terminar
 docker compose down        # para o container, mas mantém os dados salvos
-docker compose down -v     # ou remove tudo, inclusive os dados, se quiser recomeçar do zero
 ```
 
-### Executando a Interface Web (Streamlit)
+---
 
-O projeto possui uma interface visual para interagir com o banco de dados. **Certifique-se de que o banco (PostgreSQL local ou Docker) esteja rodando** e com as tabelas criadas antes de iniciar a aplicação.
+## Executando a Interface Web (Streamlit)
+
+O projeto possui uma interface visual robusta construída em **Streamlit** que implementa todas as rotinas usando **SQLAlchemy (ORM)**. 
+
+Certifique-se de que o banco de dados esteja rodando e com todos os scripts acima executados antes de iniciar a aplicação.
 
 ```bash
 # entre na pasta da aplicação
@@ -100,51 +119,29 @@ pip install -r requirements.txt
 # inicie o servidor do Streamlit
 streamlit run app.py
 ```
-A aplicação abrirá automaticamente no seu navegador.
+A aplicação abrirá automaticamente no seu navegador. Lá você encontrará as operações de CRUD, relatórios analíticos, chamadas para as Stored Procedures e simulação de concorrência.
 
 ---
 
-## O que cada script faz
+## O que cada script SQL faz
 
-**`create_tables.sql`** — cria as 10 tabelas do modelo, com as duas
-especializações (`pessoa → paciente/profissional` e
-`profissional → preceptor/residente`) e a tabela associativa
-`procedimento_realizado`. Todas as restrições de integridade já vêm aqui.
+### Etapa 1
+- **`create_tables.sql`**: cria as tabelas do modelo e constraints.
+- **`insert_dados.sql`**: popula o banco com dados de teste iniciais.
+- **`crud_consultas.sql`**: operações de CRUD (inserir, listar, atualizar e deletar).
+- **`consultas_analiticas.sql`**: consultas puras (ranking, preceptores mais ativos, etc).
 
-**`insert_dados.sql`** — enche o banco com dados de teste: 5 pacientes,
-5 preceptores, 5 residentes, 4 unidades, 8 procedimentos, 10 atendimentos,
-14 procedimentos realizados e 6 escalas.
-
-**`crud_consultas.sql` (Item 3)** — as operações de CRUD e as consultas básicas:
-
-| # | Operação | O que faz |
-|---|----------|-----------|
-| 3.1 | **Create** | Insere um atendimento, checando antes se paciente, residente e preceptor existem |
-| 3.2 | **Read** | Lista os atendimentos de um paciente, ordenados por data |
-| 3.3 | **Read** | Lista os procedimentos de um atendimento (nome, quantidade e tempo real) |
-| 3.4 | **Update** | Atualiza os dados de um paciente (convênio e telefone) |
-| 3.5 | **Delete** | Remove um procedimento realizado, mas só se ainda não foi faturado |
-| 3.6 | **Read/agregação** | Calcula o tempo médio dos atendimentos por residente |
-
-Como é SQL puro, o `crud_consultas.sql` usa IDs de exemplo que existem no
-`insert_dados.sql` e mexe nos dados de teste ao rodar — é isso mesmo, é o jeito
-de mostrar as operações funcionando.
-
-**`consultas_analiticas.sql` (Item 4)** — as consultas analíticas exigidas:
-
-| # | Consulta |
-|---|----------|
-| 4.1 | Ranking dos residentes por número de atendimentos realizados |
-| 4.2 | Preceptores que supervisionaram mais de 5 atendimentos em um mês |
-| 4.3 | Quantidade de plantões escalados por residente, por unidade |
-| 4.4 | Pacientes que nunca realizaram procedimento de risco ALTO |
-
----
-
-## Modelagem
-
-O DER, o modelo relacional e a justificativa de normalização até a 3FN estão em
-[`docs/Modelagem_ProjetoBD.pdf`](docs/Modelagem_ProjetoBD.pdf).
+### Etapa 2
+- **`stored_procedures.sql`**:
+  - `sp_registrar_atendimento_completo`: Registro de atendimento usando transação de múltiplos procedimentos.
+  - `sp_calcular_tempo_medio_espera`: Calcula média de tempo de espera.
+  - `sp_reajustar_escala`: Move escalas evitando colisões.
+- **`triggers.sql`**: 
+  - `trg_check_sobreposicao_escala`: Restrição avançada de sobreposição.
+  - `trg_audita_atendimento`: Auditoria DML gerando snapshots de JSONB.
+  - `trg_atualiza_media_procedimentos`: Atualização incremental de média estatística.
+- **`views.sql`**: Cria views para facilitar os relatórios, como pacientes internados, residentes sem supervisão e estatísticas mensais.
+- **`concorrencia.sql`**: Adiciona os identificadores de versionamento para lock otimista usado pela ORM.
 
 ---
 
