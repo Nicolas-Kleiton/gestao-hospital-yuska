@@ -4,14 +4,15 @@
 
 -- inserir novo atendimento (so insere se paciente, residente e preceptor existem)
 INSERT INTO atendimento (id_atendimento, data_hora, duracao_minutos,
-                         id_paciente, id_residente, id_preceptor)
+                         id_paciente, id_residente, id_preceptor, id_unidade)
 SELECT
     (SELECT COALESCE(MAX(id_atendimento), 0) + 1 FROM atendimento),
     TIMESTAMP '2025-05-28 09:30:00',
     40,
     1,
     11,
-    6
+    6,
+    1
 WHERE EXISTS (SELECT 1 FROM paciente  WHERE id_pessoa       = 1)
   AND EXISTS (SELECT 1 FROM residente WHERE id_profissional = 11)
   AND EXISTS (SELECT 1 FROM preceptor WHERE id_profissional = 6)
