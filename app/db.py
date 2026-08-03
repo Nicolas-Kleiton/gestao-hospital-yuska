@@ -286,9 +286,7 @@ def pacientes_sem_procedimento_alto():
         )
         return [r._asdict() for r in rows]
 
-# ==========================================
 # ETAPA 2: Views e Stored Procedures
-# ==========================================
 
 def listar_pacientes_internados():
     with get_session() as s:
@@ -328,9 +326,7 @@ def reajustar_escala(id_residente, dia_orig, turno_orig, dia_dest, turno_dest):
             raise e
 
 
-# ==========================================
 # ETAPA 2 - Item 5: Consultas avancadas com ORM
-# ==========================================
 
 def preceptores_de_pacientes_flamenguistas():
     with get_session() as s:
@@ -413,10 +409,7 @@ def percentual_alto_risco_por_residente():
             for r in rows
         ]
 
-
-# ==========================================
 # ETAPA 2 - Item 6: Concorrencia e transacoes (lock otimista)
-# ==========================================
 
 def simular_concorrencia_escala(id_escala, turno_a, turno_b):
     """Abre duas sessoes independentes sobre a MESMA linha de escala, simulando

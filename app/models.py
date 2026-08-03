@@ -175,10 +175,7 @@ class Escala(Base):
 
     __mapper_args__ = {"version_id_col": version_id}
 
-
-# ==========================================
 # VIEWS (Etapa 2)
-# ==========================================
 
 class VwPacientesInternados(Base):
     __tablename__ = "vw_pacientes_internados"
