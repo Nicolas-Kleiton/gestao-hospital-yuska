@@ -119,7 +119,7 @@ if pagina == "Atendimentos":
     # Barra de busca estilizada
     col_busca, _ = st.columns([1, 1])
     with col_busca:
-        escolha = st.selectbox("🔍 Buscar Paciente", list(opcoes.keys()))
+        escolha = st.selectbox("🔍 Buscar Paciente", list(opcoes.keys()), placeholder="Escolha uma opção...")
     
     paciente_atual = opcoes[escolha]
     id_paciente = paciente_atual["id_pessoa"]
@@ -151,7 +151,8 @@ if pagina == "Atendimentos":
             id_selecionado = st.selectbox(
                 "🔎 Selecione um atendimento para ver os procedimentos",
                 [a["id_atendimento"] for a in atendimentos],
-                format_func=lambda x: f"Atendimento #{x} - {next((a['data_hora'] for a in atendimentos if a['id_atendimento'] == x), '')}"
+                format_func=lambda x: f"Atendimento #{x} - {next((a['data_hora'] for a in atendimentos if a['id_atendimento'] == x), '')}",
+                placeholder="Escolha uma opção..."
             )
         else:
             st.info("ℹ️ Este paciente ainda não possui atendimentos registrados.")
@@ -198,12 +199,12 @@ if pagina == "Atendimentos":
             f_duracao = c3.number_input("⏱️ Duração (min)", min_value=1, value=30)
 
             c4, c5, c6 = st.columns(3)
-            f_residente = c4.selectbox("👨‍⚕️ Residente", list(residentes.keys()))
-            f_preceptor = c5.selectbox("👨‍🏫 Preceptor", list(preceptores.keys()))
-            f_unidade = c6.selectbox("🏥 Unidade", list(unidades.keys()))
+            f_residente = c4.selectbox("👨‍⚕️ Residente", list(residentes.keys()), placeholder="Escolha uma opção...")
+            f_preceptor = c5.selectbox("👨‍🏫 Preceptor", list(preceptores.keys()), placeholder="Escolha uma opção...")
+            f_unidade = c6.selectbox("🏥 Unidade", list(unidades.keys()), placeholder="Escolha uma opção...")
 
             st.markdown("##### Procedimentos Realizados")
-            procs_selecionados = st.multiselect("Selecione os procedimentos", list(procs_disponiveis.keys()))
+            procs_selecionados = st.multiselect("Selecione os procedimentos", list(procs_disponiveis.keys()), placeholder="Escolha uma ou mais opções...")
 
             st.write("")
             enviado = st.form_submit_button("✅ Salvar Atendimento", use_container_width=True)
@@ -262,7 +263,7 @@ elif pagina == "Pacientes":
             opcoes = {p["nome"]: p for p in pacientes}
             col_selecao, _ = st.columns([1, 1])
             with col_selecao:
-                escolha = st.selectbox("Selecione o Paciente para Edição", list(opcoes.keys()))
+                escolha = st.selectbox("Selecione o Paciente para Edição", list(opcoes.keys()), placeholder="Escolha uma opção...")
             
             p = opcoes[escolha]
 
@@ -405,14 +406,14 @@ elif pagina == "Relatorios":
         residentes_dict = {r["nome"]: r["id_profissional"] for r in db.listar_residentes()}
         
         with st.form("form_reajuste_escala"):
-            res_sel = st.selectbox("Selecione o Residente", list(residentes_dict.keys()))
+            res_sel = st.selectbox("Selecione o Residente", list(residentes_dict.keys()), placeholder="Escolha uma opção...")
             c1, c2 = st.columns(2)
-            dia_o = c1.selectbox("De: Dia", dias)
-            turno_o = c2.selectbox("De: Turno", turnos)
+            dia_o = c1.selectbox("De: Dia", dias, placeholder="Escolha uma opção...")
+            turno_o = c2.selectbox("De: Turno", turnos, placeholder="Escolha uma opção...")
             
             c3, c4 = st.columns(2)
-            dia_d = c3.selectbox("Para: Dia", dias, index=1)
-            turno_d = c4.selectbox("Para: Turno", turnos)
+            dia_d = c3.selectbox("Para: Dia", dias, index=1, placeholder="Escolha uma opção...")
+            turno_d = c4.selectbox("Para: Turno", turnos, placeholder="Escolha uma opção...")
             
             submit_reajuste = st.form_submit_button("Reajustar Escala")
             if submit_reajuste:
@@ -474,8 +475,8 @@ elif pagina == "Relatorios":
         with st.form("form_concorrencia"):
             id_escala = st.number_input("ID da escala (banco de testes: 1 a 6)", min_value=1, value=1, step=1)
             c1, c2 = st.columns(2)
-            turno_a = c1.selectbox("Transação A tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=1)
-            turno_b = c2.selectbox("Transação B tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=2)
+            turno_a = c1.selectbox("Transação A tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=1, placeholder="Escolha uma opção...")
+            turno_b = c2.selectbox("Transação B tenta mudar o turno para", ["Manha", "Tarde", "Noite"], index=2, placeholder="Escolha uma opção...")
             simular = st.form_submit_button("▶️ Simular conflito")
 
         if simular:
