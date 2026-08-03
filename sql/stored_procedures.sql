@@ -1,35 +1,16 @@
 -- Sistema de Gestao Hospitalar Dra. Yuska Maritan Brito
 -- Etapa 2 - Item 1: Stored Procedures (PostgreSQL / PL-pgSQL)
---
--- Pre-requisito: create_tables.sql e insert_dados.sql. As colunas que a Etapa 2
--- acrescentou ao modelo (atendimento.id_unidade e
--- procedimento_realizado.data_hora_inicio) estao marcadas com [Etapa 2] no
--- create_tables.sql.
+-- Requer create_tables.sql e insert_dados.sql (colunas novas marcadas [Etapa 2])
 
 
 -- ============================================================================
 -- 1. sp_registrar_atendimento_completo
 -- ============================================================================
--- Recebe os dados do atendimento + a lista de procedimentos realizados em um
--- array JSON e grava tudo de forma atomica: se qualquer procedimento falhar,
--- o atendimento tambem nao e gravado.
+-- Registra o atendimento e seus procedimentos em uma unica transacao: se
+-- qualquer procedimento falhar, o atendimento tambem nao e gravado.
 --
--- Formato esperado de p_procedimentos (array de objetos):
---   [
---     {"id_procedimento": 2, "quantidade": 1, "tempo_real_minutos": 12,
---      "data_hora_inicio": "2025-06-01 09:05:00",
---      "observacao": "Coleta de rotina", "tem_faturamento": true},
---     {"id_procedimento": 7, "quantidade": 2}
---   ]
--- Apenas id_procedimento e obrigatorio; quantidade assume 1 e tem_faturamento
--- assume false quando omitidos.
---
--- SOBRE A TRANSACAO
--- Todo o corpo esta dentro de um bloco BEGIN ... EXCEPTION, o que no PL-pgSQL
--- cria uma subtransacao: qualquer erro desfaz TUDO que o bloco escreveu antes
--- de propagar. Por isso nao ha (nem pode haver) COMMIT/ROLLBACK explicito aqui
--- dentro -- o PostgreSQL proibe COMMIT dentro de bloco com EXCEPTION handler.
--- Quem chama o CALL controla o commit final.
+-- p_procedimentos: array JSON, ex. [{"id_procedimento": 2, "quantidade": 1}]
+-- so id_procedimento e obrigatorio; quantidade default 1, tem_faturamento default false.
 CREATE OR REPLACE PROCEDURE sp_registrar_atendimento_completo(
     IN    p_data_hora        TIMESTAMP,
     IN    p_duracao_minutos  INT,
@@ -52,7 +33,6 @@ DECLARE
 BEGIN
     p_id_atendimento := NULL;
 
-    -- ---------- validacao do cabecalho do atendimento ----------
     IF p_data_hora IS NULL THEN
         RAISE EXCEPTION 'data_hora do atendimento e obrigatoria';
     END IF;
@@ -78,7 +58,6 @@ BEGIN
         RAISE EXCEPTION 'Unidade % nao encontrada', p_id_unidade;
     END IF;
 
-    -- ---------- validacao da lista de procedimentos ----------
     IF p_procedimentos IS NULL OR jsonb_typeof(p_procedimentos) <> 'array' THEN
         RAISE EXCEPTION 'p_procedimentos deve ser um array JSON (recebido: %)',
             COALESCE(jsonb_typeof(p_procedimentos), 'null');
@@ -89,7 +68,6 @@ BEGIN
         RAISE EXCEPTION 'Informe ao menos um procedimento realizado';
     END IF;
 
-    -- itens sem id_procedimento
     SELECT COUNT(*)
       INTO v_nulos
       FROM jsonb_to_recordset(p_procedimentos) AS j(id_procedimento INT)
@@ -100,7 +78,6 @@ BEGIN
             v_nulos;
     END IF;
 
-    -- procedimentos que nao existem no catalogo
     SELECT string_agg(DISTINCT j.id_procedimento::TEXT, ', ')
       INTO v_inexistentes
       FROM jsonb_to_recordset(p_procedimentos) AS j(id_procedimento INT)
@@ -113,7 +90,7 @@ BEGIN
         RAISE EXCEPTION 'Procedimento(s) inexistente(s) no catalogo: %', v_inexistentes;
     END IF;
 
-    -- o mesmo procedimento repetido violaria a PK de procedimento_realizado
+    -- repetido violaria a PK composta (id_atendimento, id_procedimento)
     SELECT string_agg(d.id_procedimento::TEXT, ', ')
       INTO v_duplicados
       FROM (
@@ -128,7 +105,6 @@ BEGIN
             v_duplicados;
     END IF;
 
-    -- procedimento nao pode comecar antes do paciente chegar
     SELECT COUNT(*)
       INTO v_antes_chegada
       FROM jsonb_to_recordset(p_procedimentos) AS j(data_hora_inicio TIMESTAMP)
@@ -140,7 +116,6 @@ BEGIN
             v_antes_chegada, p_data_hora;
     END IF;
 
-    -- ---------- gravacao ----------
     INSERT INTO atendimento (data_hora, duracao_minutos,
                              id_paciente, id_residente, id_preceptor, id_unidade)
     VALUES (p_data_hora, p_duracao_minutos,
@@ -175,30 +150,21 @@ BEGIN
 
 EXCEPTION
     WHEN OTHERS THEN
-        -- o rollback da subtransacao ja aconteceu neste ponto: nem o
-        -- atendimento nem os procedimentos ficam gravados
+        -- bloco EXCEPTION = subtransacao: erro aqui desfaz o INSERT do atendimento tambem
         p_id_atendimento := NULL;
         RAISE EXCEPTION 'Falha ao registrar atendimento completo: % (SQLSTATE %). Nada foi gravado.',
             SQLERRM, SQLSTATE;
 END;
 $$;
 
--- 2. sp_calcular_tempo_medio_espera
 
--- Tempo medio, por unidade, entre a chegada do paciente (atendimento.data_hora)
--- e o inicio do primeiro procedimento daquele atendimento.
+-- ============================================================================
+-- 2. sp_calcular_tempo_medio_espera
+-- ============================================================================
+-- Tempo medio, por unidade, entre a chegada do paciente e o inicio do
+-- primeiro procedimento do atendimento.
 --
--- Implementada como FUNCTION e nao como PROCEDURE porque no PostgreSQL apenas
--- funcoes podem devolver um conjunto de linhas (RETURNS TABLE). Uma PROCEDURE
--- so conseguiria devolver isso via refcursor, o que atrapalharia o reuso em
--- views e relatorios. O nome sp_ foi mantido por padronizacao.
---
--- Regras de contagem:
---   * procedimentos sem data_hora_inicio sao ignorados (o registro do inicio
---     e opcional; a unidade nao, por isso atendimento.id_unidade e NOT NULL);
---   * atendimentos cujo primeiro procedimento comeca ANTES da chegada sao
---     descartados como dado inconsistente, em vez de gerar espera negativa;
---   * unidades sem nenhum atendimento valido aparecem com 0 e NULL.
+-- FUNCTION (nao PROCEDURE) porque so funcao pode RETURNS TABLE / ser usada em SELECT.
 CREATE OR REPLACE FUNCTION sp_calcular_tempo_medio_espera()
 RETURNS TABLE (
     id_unidade                 INT,
@@ -220,7 +186,7 @@ BEGIN
         INNER JOIN procedimento_realizado pr ON pr.id_atendimento = a.id_atendimento
         WHERE pr.data_hora_inicio IS NOT NULL
         GROUP BY a.id_atendimento, a.id_unidade, a.data_hora
-        HAVING MIN(pr.data_hora_inicio) >= a.data_hora
+        HAVING MIN(pr.data_hora_inicio) >= a.data_hora  -- descarta inicio antes da chegada
     )
     SELECT
         u.id_unidade,
@@ -228,23 +194,19 @@ BEGIN
         COUNT(e.id_atendimento),
         ROUND(AVG(e.espera_minutos), 1)
     FROM unidade u
-    LEFT OUTER JOIN espera_por_atendimento e ON e.id_unidade = u.id_unidade
+    LEFT OUTER JOIN espera_por_atendimento e ON e.id_unidade = u.id_unidade  -- unidade sem atendimento nao some
     GROUP BY u.id_unidade, u.nome
     ORDER BY AVG(e.espera_minutos) DESC NULLS LAST, u.nome;
 END;
 $$;
 
--- 3. sp_reajustar_escala
 
--- Move TODAS as escalas de um residente de um par (dia, turno) para outro par
--- (dia, turno), preservando a unidade de cada escala.
---
--- So executa se nenhuma das escalas movidas colidir com uma escala ja
--- existente do mesmo residente na mesma unidade + dia + turno de destino
--- (a chave UNIQUE (id_unidade, dia_semana, turno, id_residente)). Se houver
--- qualquer conflito, NENHUMA escala e movida -- a operacao e tudo ou nada.
---
--- Devolve em p_escalas_movidas a quantidade de escalas efetivamente alteradas.
+-- ============================================================================
+-- 3. sp_reajustar_escala
+-- ============================================================================
+-- Move todas as escalas de um residente de um dia/turno para outro.
+-- So executa se nada colidir com a UNIQUE (id_unidade, dia_semana, turno, id_residente);
+-- havendo qualquer conflito, nenhuma escala e movida.
 CREATE OR REPLACE PROCEDURE sp_reajustar_escala(
     IN    p_id_residente    INT,
     IN    p_dia_origem      VARCHAR,
@@ -263,7 +225,6 @@ DECLARE
 BEGIN
     p_escalas_movidas := 0;
 
-    -- ---------- validacoes ----------
     IF NOT EXISTS (SELECT 1 FROM residente WHERE id_profissional = p_id_residente) THEN
         RAISE EXCEPTION 'Residente % nao encontrado', p_id_residente;
     END IF;
@@ -293,9 +254,8 @@ BEGIN
             p_dia_origem, p_turno_origem;
     END IF;
 
-    -- ---------- checagem de conflito (antes de alterar qualquer linha) ----------
-    -- Para cada escala candidata, verifica se o residente ja tem escala na
-    -- MESMA unidade no dia/turno de destino.
+    -- verifica conflito antes do UPDATE; dest.id_escala <> orig.id_escala evita
+    -- que a propria escala sendo movida conte como conflito com ela mesma
     SELECT string_agg(DISTINCT u.nome, ', ' ORDER BY u.nome)
       INTO v_conflitos
       FROM escala orig
@@ -318,7 +278,6 @@ BEGIN
             p_id_residente, p_dia_destino, p_turno_destino, v_conflitos;
     END IF;
 
-    -- ---------- reajuste ----------
     UPDATE escala
        SET dia_semana = p_dia_destino,
            turno      = p_turno_destino
